@@ -1,8 +1,8 @@
 ##################################################################
-# Titel:      On the L1-Acquisition of Amplification in English - Part 2
+# Titel:      On the L1-Acquisition of Amplification in English - Part 4
 # R version:  3.5.1 (2018-07-02) -- "Feather Spray"
 # Autor:      Martin Schweinberger
-# Date:       2019-02-08
+# Date:       2019-11-28
 # Contact:    martin.schweinberger.hh@gmail.com
 # Disclaimer: If you have questions,suggestions or you found errors
 #             or in case you would to provide feedback, questions
@@ -12,8 +12,12 @@
 #             of Amplification in English - Part 2",
 #             unpublished R script, The University of Queensland.
 ###############################################################
-rm(list=ls(all=T))                                      # clean current workspace
-setwd("D:\\Uni\\Projekte\\02-Intensification\\Amp1L")   # set wd
+# clean current workspace
+rm(list=ls(all=T))                                      
+# set options
+options(stringsAsFactors = F)
+# define image directors
+imageDirectory<-"images"
 # activate packages
 library(dplyr)
 library(ggplot2)
@@ -23,207 +27,443 @@ library(tibble)
 source("D:\\R/mlr.summary.R")
 source("D:\\R/blr.summary.R")
 source("D:\\R/meblr.summary.R")
-source("D:\\R/ModelFittingSummarySWSDGLM.R") # for Mixed Effects Model fitting (step-wise step-up): Binary Logistic Mixed Effects Models
-source("D:\\R/ModelFittingSummarySWSUGLM.R") # for Mixed Effects Model fitting (step-wise step-down): Binary Logistic Mixed Effects Models
-source("D:\\R/ModelFittingSummarySWSULogReg.R") # for Fixed Effects Model fitting: Binary Logistic Models
-###############################################################
-# Setting options
-options(stringsAsFactors = F)
-# define image directors
-imageDirectory<-"images"
-# Specify pathnames of the corpra
-bio.path <- "D:\\Uni\\Projekte\\02-Intensification\\07IntensifierAcquisition\\IntAcqJCLAD/biowc.txt"
-int.path <- "int.txt"
-###############################################################
-### ---               PART TWO
-###############################################################
-###                   START
+source("D:\\R/ModelFittingSummarySWSDGLM.R") 
+source("D:\\R/ModelFittingSummarySWSUGLM.R") 
+source("D:\\R/ModelFittingSummarySWSULogReg.R") 
 ###############################################################
 # read in data
-bio <- read.table(bio.path, sep = "\t", header=TRUE)
-int <- read.table(int.path, sep = "\t", header=TRUE)
+data <- read.delim("datatables/data.txt", sep = "\t", header=TRUE, quote = "", skipNul = T)
+# remove hungry
+data <- data %>%
+  dplyr::filter(Adjective != "hungry")
 # extract examples
-exp <- int[int$absint == 1, ]
-# join data
-int <- int %>%
-  left_join(bio, by = c("file", "spk")) %>%
-  select(file, visit, styp, spk, age, gender, wc, status, 
-         pre, post, prepos, prelex, tokenlex, absint) %>%
-  mutate(Age = str_replace_all(age, "\\..*", "")) %>%
-  select(-age) %>%
-  mutate(Age_year = str_replace_all(Age, ";.*", "")) %>%
-  mutate(month = as.numeric(str_replace_all(Age, ".*;", ""))/1.2)%>%
-  mutate(month = round(month, 1)) %>%
-  mutate(month = str_replace_all(month, "\\.", "")) %>%
-  mutate(Age_decimal = paste(Age_year, ".", month, sep = "")) %>%
-  mutate(Age_decimal = str_replace_all(Age_decimal, "NA.NA", "NA")) %>%
-  rename(PreviousContext = pre) %>%
-  rename(FollowingContext = post) %>%
-  rename(Speaker = spk) %>%
-  rename(Visit = visit) %>% 
-  rename(SituationType = styp) %>% 
-  rename(Amplified = absint) %>% 
-  rename(Gender = gender)  %>% 
-  rename(File = file) %>% 
-  select(-month)
-# inspect data
-head(int)
+ex <- data %>%
+  dplyr::filter(Amplified == "yes") %>%
+  dplyr::select(File, Speaker, PreceedingContext, Adjective, SubsequentContext) %>%
+  dplyr::mutate(Example = paste(File, Speaker, ": ", PreceedingContext, Adjective, SubsequentContext, sep = " ")) %>%
+  dplyr::select(Example) %>%
+  dplyr::mutate(Example = str_replace_all(Example, "/[A-Z]{1,4} ", " "))
+# inspect examples
+head(ex)
 
-# remove all speakers who are neither child or mother
-BRO <- c("BR1", "BR2", "BR3", "BRO", "BRO1", "BRO2")
-CHI <- c("CHI")
-FAM <- c("ANT", "AUN", "CO3", "COS", "COU", "COU2", "COU3", "GFA", 
-         "GMA", "GPA", "GRA", "GRF", "GRM", "UNC")
-FAT <- c("FAT")
-MOT <- c("MOT")
-rmv <- c("ADU", "ALX", "BAB", "BFD", "BRI", "CAL", "CLI", "EX1", "EX2", 
-         "FE1", "FE2", "FE3", "FEM", "FIA", "FR1", "FRE", "FRI", "INV", 
-         "INV1", "INV2", "INV3", "JAK", "JES", "KID", "LIS", "MA1", "MA2", 
-         "MAL", "MAN", "MAR", "MIA", "PLA", "SAN", "SHE", "SS", "STE", 
-         "VIS", "WOM", "XXX")
-SIS <- c("SI1", "SI2", "SI3", "SIB", "SIS", "SIS1", "SIS2", "SIS3")
-int$Speaker <- ifelse(int$Speaker %in% BRO, "BRO",
-                       ifelse(int$Speaker %in% CHI, "CHI",
-                       ifelse(int$Speaker %in% FAM, "FAM",
-                       ifelse(int$Speaker %in% FAT, "FAT",
-                       ifelse(int$Speaker %in% MOT, "MOT",
-                       ifelse(int$Speaker %in% SIS, "SIS", "rmv")))))) 
-nrow(int)
+# use AgeGroup of Child and apply it instances in that file
 
-data <- int %>%
-  filter(Speaker != "rmv") %>%
-  mutate(Age_year = factor(Age_year))
-nrow(data)
-
-# recode SituationType
-data$SituationType_categorical <- ifelse(data$SituationType == "br", "formal",
-              ifelse(data$SituationType == "tp", "informal",
-              ifelse(data$SituationType == "mt", "informal",
-              ifelse(data$SituationType == "er", "formal",
-              ifelse(data$SituationType == "et", "formal",
-              ifelse(data$SituationType == "lw", "formal",
-              ifelse(data$SituationType == "re", "formal",
-              ifelse(data$SituationType == "md", "formal", data$SituationType))))))))
-# remove SituationType md and re from data (too few: md = 368, re = 325)
-data <- data %>%
-  # remove rare situation types
-  filter(SituationType != "re") %>%
-  filter(SituationType != "md") %>%
-  # recode SituationType
-  mutate(SituationType = str_replace_all(SituationType, "tp", "toy play")) %>% 
-  mutate(SituationType = str_replace_all(SituationType, "mt", "meal time")) %>% 
-  mutate(SituationType = str_replace_all(SituationType, "er", "elicited report")) %>% 
-  mutate(SituationType = str_replace_all(SituationType, "et", "experimental task")) %>% 
-  mutate(SituationType = str_replace_all(SituationType, "br", "book reading")) %>% 
-  mutate(SituationType = str_replace_all(SituationType, "lw", "letter writing"))  %>% 
-  # extract Variant
-  mutate(Variant = ifelse(Amplified == "0", "0", tolower(prelex)))   %>% 
-  # rename columns
-  rename(Adjective = tokenlex) %>%
-  rename(Words = wc) %>%
-  # clean Adjectives
-  mutate(Adjective = tolower(Adjective)) %>%
-  # recode SituationType
-  mutate(Status = str_replace_all(status, "pred", "Predicative")) %>% 
-  mutate(Status = str_replace_all(Status, "attr", "Attributive"))  %>% 
-  # remove columns
-  select(-prelex, -status)
-# recode age and visit 
-data <- data %>%
-  mutate(AgeGroup = ifelse(Age_year == "3" | Age_year == "4" , "3-4", 
-                           ifelse(Age_year == "5" | Age_year == "6" , "5-6", 
-                           ifelse(Age_year == "7" | Age_year == "8" , "7-8",
-                           ifelse(Age_year == "9" | Age_year == "10" , "9-10", Age_year))))) %>%
-  mutate(Visit = ifelse(Visit == "hv1", "Visit1", 
-                        ifelse(Visit == "hv2", "Visit2",
-                        ifelse(Visit == "hv3", "Visit3",
-                        ifelse(Visit == "hv5", "Visit5",
-                        ifelse(Visit == "hv7", "Visit7", Visit))))))
 # factorize variables
+fctrs <- c("Speaker", "Gender", "Name", "Location", "Visit", "Activity", "Function",
+           "Amplified", "Interlocutor", "SituationType", "ParticipantNumber")
+data[fctrs] <- lapply(data[fctrs], as.factor)
+# numerize variables
+nmbrs <- c("Age", "WordCount")
+data[nmbrs] <- lapply(data[nmbrs], as.numeric)
+# remove data from children 11 to 12 (only 3 amplified and 36 adjs overall)
+keepfiles <- data %>%
+  dplyr::select(File, AgeGroup) %>%
+  dplyr::filter(AgeGroup != "11-12")
 data <- data %>%
-  mutate(File = factor(File),
-         Visit = factor(Visit),
-         SituationType = factor(SituationType),
-         Speaker = factor(Speaker),
-         Gender = factor(Gender),
-         SituationType_categorical = factor(SituationType_categorical),
-         Status = factor(Status),
-         AgeGroup = factor(AgeGroup))
+  dplyr::filter(Files %in% keepfiles)
+# factorize AgeGroup
+data$AgeGroup <- factor(data$AgeGroup, levels = c("3-4", "5-6", "7-8", "9-10"))
 # inspect data
-str(data)
+str(data); head(data) 
 
 ###############################################################
-# define forms that require removal
-sups <- c(".*most.*", ".*more.*") 
-negs <- c(".*not.*", ".*never.*", ".*n't.*")
-downtoners <- c(".*sort/.*", ".*kind/.*", ".* bit/.*", ".*somewhat.*", ".*fairly.*", 
-                ".*rather.*", ".*reasonably.*", ".*slightly.*", ".*comparatively.*", ".*semi.*", 
-                ".*relatively.*", ".*little.*", ".*somehow.*", ".*almost.*", ".*partly.*", 
-                ".*hardly.*", ".* less.*", ".*barely.*", ".* just/.*")
-specialforms <- c(".* too.*", ".*quite.*")
-PostContextdowntoners <- c(".*enough.*")
-nonpropadj <- c("only", "other", "much", "many", "cheaper", "cheaperr", "bests", "larger", "like", "morer", "uhm", "uhr")
-# find items to be removed
-supsidx <- unique(grep(paste(sups,collapse="|"), data$PreviousContext, value=F))
-negsidx <- unique(grep(paste(negs,collapse="|"), data$PreviousContext, value=F))
-downtonersidx <- unique(grep(paste(downtoners,collapse="|"), data$PreviousContext, value=F))
-specialformsidx <- unique(grep(paste(specialforms,collapse="|"), data$PreviousContext, value=F))
-PostContextdowntonersidx <- unique(grep(paste(PostContextdowntoners,collapse="|"), data$FollowingContext, value=F))
-nonpropadjidx <- unique(grep(paste(nonpropadj,collapse="|"), data$Adjective, value=F))
-# combine indices
-idxs <- unique(c(supsidx, negsidx, downtonersidx, specialformsidx, PostContextdowntonersidx, nonpropadjidx))
-# remove forms that requhcie removal
-data <- data[-idxs,]
-# remove empty values
-data <- data[!data$Variant == "", ]
-# inspect data
+# Figure 0
+# prepare data
+fvrnt <- c("really", "pretty", "so", "very", "real")
+p0d <- data %>%
+  dplyr::select(Speaker, AgeGroup, Activity, Variant) %>%
+  dplyr::filter(Speaker == "CHI" & Variant != "0") %>%
+  dplyr::mutate(Variant = ifelse(Variant %in% fvrnt, Variant, "other")) %>%
+  group_by(Variant, AgeGroup, Activity) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  group_by(AgeGroup, Activity) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::select(-Frequency) %>%
+  dplyr::mutate(Variant = factor(Variant)) %>%
+  dplyr::rename(Age = AgeGroup) %>%
+  tidyr::spread(Activity, Percent) %>%
+  dplyr::mutate(`Book reading` = tidyr::replace_na(`Book reading`, "0")) %>%
+  dplyr::mutate(`Elicited report` = tidyr::replace_na(`Elicited report`, "0")) %>%
+  dplyr::mutate(`Experimental task` = tidyr::replace_na(`Experimental task`, "0")) %>%
+  dplyr::mutate(`Letter writing` = tidyr::replace_na(`Letter writing`, "0")) %>%
+  dplyr::mutate(`Mean time` = tidyr::replace_na(`Meal time`, "0")) %>%
+  dplyr::mutate(`Toy play` = tidyr::replace_na(`Toy play`, "0")) %>%
+  tidyr::gather(Activity, Percent, `Book reading`:`Toy play`) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(Variant = factor(Variant)) %>%
+  dplyr::mutate(Activity = factor(Activity)) %>%
+  dplyr::mutate(Age = factor(Age)) %>%
+  dplyr::mutate(Percent = as.numeric(Percent))
+# plot 0
+p0 <- ggplot(p0d, aes(x = Age, y = Percent, fill = Variant)) +
+  facet_wrap(~ Activity, ncol = 3) +
+  geom_bar(stat="identity", position = position_dodge()) +
+  coord_cartesian(ylim = c(0, 100)) +
+  theme_set(theme_bw(base_size = 15)) +
+  theme(legend.position="top",
+        legend.title=element_blank(),
+        axis.line = element_line(colour = "black")) +
+  labs(x = "Age", y = "Percent") +
+  scale_fill_manual(values=c("grey90", "grey75","grey60","grey45","grey30","grey15"),
+                    name=c("Variants"),
+                    breaks=c("other", "pretty", "real", "really", "so", "very"),  
+                    labels = c("other", "pretty", "real", "really", "so", "very")) +
+  scale_y_continuous(name="Percent", limits=c(0, 100)) +
+  ggsave(file = paste(imageDirectory,"VariantsAgeActivity.png",sep="/"),
+         height = 10,  width = 10,  dpi = 320)
+p0
+
+###############################################################
+# WARNING: ONLY MEAL TIME DATA!
+nrow(data)
+
+data <- data %>%
+  dplyr::filter(Activity == "Meal time")
 nrow(data)
 
 ###############################################################
-#                       WARNING
-# remove items basde on frequency of amplification
-pintadjtb <- table(data$Adjective, data$Variant)
-pintadjtb <- pintadjtb[,2:ncol(pintadjtb)]
-pintadjtb2 <- apply(pintadjtb, 1, function(x){
-  x <- ifelse(x > 1, 1, x)})
-pintadjtb3 <- colSums(pintadjtb2)
-# never amplified
-neveramplified <- names(pintadjtb3)[which(pintadjtb3 == 0 )]
-onceamplified <- names(pintadjtb3)[which(pintadjtb3 == 1 )]
-twiceamplified <- names(pintadjtb3)[which(pintadjtb3 > 1 )]
-# perform removal
-data <- data %>%
-  # remove adjectives that were never amplified
-  mutate(Remove = ifelse(Adjective %in% neveramplified, "remove", "keep")) %>%
-  filter(Remove == "keep") %>%
-  # remove adjectives that were once amplified
-  mutate(Remove = ifelse(Adjective %in% onceamplified, "remove", "keep")) %>%
-  filter(Remove == "keep") %>%
-  # remove adjectives that were twice amplified
-  #mutate(Remove = ifelse(Adjective %in% twiceamplified, "remove", "keep")) %>%
-  #filter(Remove == "keep") %>%
-  select(-Remove)
-# remove superfluous columns
-data <- data %>%
-  select(-PreviousContext, - FollowingContext, -prepos)
-nrow(data)
 
-# remove hungry from data set
-data <- data %>%
-  filter(Adjective != "hungry")
-nrow(data)
+# Table 1: caregiver
+Table1a <- data %>%
+  dplyr::filter(Interlocutor == "Child") %>%
+  dplyr::select(Variant) %>%
+  group_by(Variant) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  dplyr::arrange(-Frequency) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::mutate(AmplifiedPercent = c("",  round(Frequency[2:length(Frequency)]/sum(Frequency[2:length(Frequency)])*100, 1)))
+Table1a
+# save data to disc
+write.table(Table1a, file = "datatables/Table1_child.txt", sep = "\t", 
+            row.names = FALSE, col.names = TRUE, quote = F)
+# Table 1: caregiver
+Table1b <- data %>%
+  dplyr::filter(Interlocutor == "PrimaryCaregiver") %>%
+  dplyr::select(Variant) %>%
+  group_by(Variant) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  dplyr::arrange(-Frequency) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::mutate(AmplifiedPercent = c("",  round(Frequency[2:length(Frequency)]/sum(Frequency[2:length(Frequency)])*100, 1)))
+Table1b
+# save data to disc
+write.table(Table1, file = "datatables/Table1_caregiver.txt", sep = "\t", 
+            row.names = FALSE, col.names = TRUE, quote = F)
 
-# remove speakers other than child and mother
-data <- data[data$Speaker == "CHI" | data$Speaker == "MOT", ]
-# remove rare age brackets
-data <- droplevels( data[-which(data$Age_year == "11"), ] )
-data <- droplevels( data[-which(data$Age_year == "12"), ] )
+# Table 2:child
+Table2 <- data %>%
+  dplyr::select(Speaker, Age, Variant) %>%
+  dplyr::filter(Speaker == "CHI") %>%
+  group_by(Variant) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  dplyr::arrange(-Frequency) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::mutate(AmplifiedPercent = c(0,  round(Frequency[2:length(Frequency)]/sum(Frequency[2:length(Frequency)])*100, 1)))
+Table2
+# save data to disc
+write.table(Table2, file = "datatables/Table2_child.txt", sep = "\t", 
+            row.names = FALSE, col.names = TRUE, quote = F)
+# Table 3
+Table3 <- data %>%
+  dplyr::select(Speaker, AgeGroup, Variant) %>%
+  dplyr::filter(Speaker == "CHI") %>%
+  group_by(Variant, AgeGroup) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  group_by(AgeGroup) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::mutate(Percent = paste(Percent, " (", Frequency, ")", sep = "")) %>%
+  dplyr::select(-Frequency) %>%
+  tidyr::spread(AgeGroup, Percent) %>%
+  dplyr::mutate(`3-4` = tidyr::replace_na(`3-4`, "0")) %>%
+  dplyr::mutate(`5-6` = tidyr::replace_na(`5-6`, "0")) %>%
+  dplyr::mutate(`7-8` = tidyr::replace_na(`7-8`, "0")) %>%
+  dplyr::mutate(`9-10` = tidyr::replace_na(`9-10`, "0")) %>%
+  dplyr::arrange(desc(`5-6`))
+Table3
+# save data to disc
+write.table(Table3, file = "datatables/Table3_child.txt", sep = "\t", 
+            row.names = FALSE, col.names = TRUE, quote = F)
+
+# Table 4
+Table4 <- data %>%
+  dplyr::select(Speaker, AgeGroup, Variant) %>%
+  dplyr::filter(Speaker == "CHI", Variant != "0") %>%
+  group_by(Variant, AgeGroup) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  group_by(AgeGroup) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::mutate(Percent = paste(Percent, " (", Frequency, ")", sep = "")) %>%
+  dplyr::select(-Frequency) %>%
+  tidyr::spread(AgeGroup, Percent) %>%
+  dplyr::mutate(`3-4` = tidyr::replace_na(`3-4`, "0")) %>%
+  dplyr::mutate(`5-6` = tidyr::replace_na(`5-6`, "0")) %>%
+  dplyr::mutate(`7-8` = tidyr::replace_na(`7-8`, "0")) %>%
+  dplyr::mutate(`9-10` = tidyr::replace_na(`9-10`, "0")) %>%
+  dplyr::arrange(desc(`5-6`))
+Table4
+# save data to disc
+write.table(Table4, file = "datatables/Table4.txt", sep = "\t", 
+            row.names = FALSE, col.names = TRUE, quote = F)
+
+###############################################################
+# Figure 1
+# prepare data
+p1d <- data %>%
+  dplyr::filter(Speaker == "CHI") %>%
+  dplyr::select(AgeGroup, Amplified) %>%
+  dplyr::rename(Age = AgeGroup) %>%
+  dplyr::group_by(Age) %>%
+  dplyr::mutate(Amplified = ifelse(Amplified == "yes", 1, 0)) %>%
+  dplyr::mutate(Amplified = Amplified*100)  %>%
+  dplyr::mutate(Adjectives = n()) 
+p1dmeans <- tapply(p1d$Amplified, p1d$Age, mean)
+table(data$AgeGroup)
+# plot 1
+p1 <- ggplot(p1d, aes(Age, Amplified)) +
+  stat_summary(fun.y = mean, geom = "point", size = 1) +
+  stat_summary(fun.y = mean, geom = "line") +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = 0.2, size = .5) +
+  coord_cartesian(ylim = c(-2, 20)) +
+  theme_set(theme_light(base_size = 20)) +
+  theme(legend.position="none") +
+  labs(x = "Age", y = "Percent (amp. adjectives)", colour = "Age") +
+  scale_color_manual(values = c("grey30")) +
+  geom_text(mapping = NULL, 
+            label = c(paste("N(slots):\n", p1d$Adjectives[1], sep = "")), 
+            x = 1, y = -1, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = "1407", 
+            x = 2, y = -1, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = "955", 
+            x = 3, y = -1, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = "860", 
+            x = 4, y = -1, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = paste("mean=\n", round(p1dmeans[1], 2), sep = ""), 
+            x = 1, y = p1dmeans[1] +5, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = paste("mean=\n", round(p1dmeans[2], 2), sep = ""), 
+            x = 2, y = p1dmeans[2] +5, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = paste("mean=\n", round(p1dmeans[3], 2), sep = ""), 
+            x = 3, y = p1dmeans[3] +5, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = paste("mean=\n", round(p1dmeans[4], 2), sep = ""), 
+            x = 4, y = p1dmeans[4] +6, colour = "grey30", size = 5) +
+  theme_set(theme_bw(base_size = 15)) +
+  theme(legend.position="none",
+        legend.title=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black")) +
+  ggsave(file = paste(imageDirectory,"ChildAmplifiedAge.png",sep="/"),
+         height = 5,  width = 5,  dpi = 320)
+p1
+
+# Figure 2
+# prepare data
+fvrnt <- c("really", "pretty", "so", "very", "real")
+p2d <- data %>%
+  dplyr::select(Speaker, AgeGroup, Variant) %>%
+  dplyr::filter(Speaker == "CHI" & Variant != "0") %>%
+  dplyr::mutate(Variant = ifelse(Variant %in% fvrnt, Variant, "other")) %>%
+  group_by(Variant, AgeGroup) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  group_by(AgeGroup) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::select(-Frequency) %>%
+  dplyr::mutate(Variant = factor(Variant)) %>%
+  dplyr::rename(Age = AgeGroup)
+# plot 2
+p2 <- ggplot(p2d, aes(x = Age, y = Percent, group = Variant, 
+             color = Variant, linetype = Variant)) +
+  geom_line(aes(y = Percent), size = 1) +
+  coord_cartesian(ylim = c(-2, 50)) +
+  theme_set(theme_bw(base_size = 15)) +
+  theme(legend.position="top",
+        legend.title=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black")) +
+  labs(x = "Age", y = "Percent") +
+  scale_linetype_manual(values=c("dotted", "dashed", "solid", "dotted", "dashed", "solid"), 
+                        name=c("Variants"),
+                        breaks = c("other", "pretty", "real", "really", "so", "very"),
+                        labels = c("other", "pretty", "real", "really", "so", "very")) + 
+  scale_colour_manual(values=c(rep("grey60", 3), rep("grey20", 3)),
+                      name=c("Variants"),
+                      breaks=c("other", "pretty", "real", "really", "so", "very"),  
+                      labels = c("other", "pretty", "real", "really", "so", "very")) +
+  ggsave(file = paste(imageDirectory,"ChildVariantsAge.png",sep="/"),
+         height = 5,  width = 5,  dpi = 320)
+p2
+
+# Figure 3
+# prepare data
+fvrnt <- c("really", "pretty", "so", "very", "real")
+p3d <- data %>%
+  dplyr::select(Speaker, AgeGroup, Variant) %>%
+  dplyr::filter(Speaker == "CHI" & Variant != "0") %>%
+  dplyr::mutate(Variant = ifelse(Variant %in% fvrnt, Variant, "other")) %>%
+  group_by(Variant, AgeGroup) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  group_by(AgeGroup) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::mutate(Frequency = paste(Percent, "\n (", Frequency, ")", sep = "")) %>%
+  dplyr::mutate(Variant = factor(Variant)) %>%
+  dplyr::rename(Age = AgeGroup) %>%
+  dplyr::mutate(Variant = factor(Variant)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(Age = factor(Age)) %>%
+  dplyr::mutate(Percent = as.numeric(Percent))
+# plot 3
+p3 <- ggplot(p3d, aes(x = Age, y = Percent, fill = Variant)) +
+  geom_bar(stat="identity", position = position_dodge()) +
+  coord_cartesian(ylim = c(0, 50)) +
+  theme_set(theme_bw(base_size = 15)) +
+  theme(legend.position="top",
+        legend.title=element_blank(),
+        axis.line = element_line(colour = "black")) +
+  labs(x = "Age", y = "Percent") +
+  scale_fill_manual(values=c("grey90", "grey75","grey60","grey45","grey30","grey15"),
+                      name=c("Variants"),
+                      breaks=c("other", "pretty", "real", "really", "so", "very"),  
+                      labels = c("other", "pretty", "real", "really", "so", "very")) +
+  geom_text(aes(label=Frequency), vjust=-.2, color="black", 
+            position = position_dodge(0.9), size=3) +
+  scale_y_continuous(name="Percent", limits=c(0, 50)) +
+  ggsave(file = paste(imageDirectory,"ChildVariantsAge_barplot.png",sep="/"),
+         height = 5,  width = 10,  dpi = 320)
+p3
+
+###############################################################
+# PrimaryCaregivers
+# Figure 4
+# prepare data
+p4d <- data %>%
+  dplyr::filter(Interlocutor == "PrimaryCaregiver") %>%
+  dplyr::select(AgeGroup, Amplified) %>%
+  dplyr::rename(Age = AgeGroup) %>%
+  dplyr::group_by(Age) %>%
+  dplyr::mutate(Amplified = ifelse(Amplified == "yes", 1, 0)) %>%
+  dplyr::mutate(Amplified = Amplified*100)  %>%
+  dplyr::mutate(Adjectives = n()) 
+p4dmeans <- tapply(p4d$Amplified, p4d$Age, mean)
+table(data$AgeGroup)
+# plot 1
+p4 <- ggplot(p4d, aes(Age, Amplified)) +
+  stat_summary(fun.y = mean, geom = "point", size = 1) +
+  stat_summary(fun.y = mean, geom = "line") +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = 0.2, size = .5) +
+  coord_cartesian(ylim = c(-2, 20)) +
+  theme_set(theme_light(base_size = 20)) +
+  theme(legend.position="none") +
+  labs(x = "Age", y = "Percent (amp. adjectives)", colour = "Age") +
+  scale_color_manual(values = c("grey30")) +
+  geom_text(mapping = NULL, 
+            label = c(paste("N(slots):\n", p1d$Adjectives[1], sep = "")), 
+            x = 1, y = -1, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = "1407", 
+            x = 2, y = -1, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = "955", 
+            x = 3, y = -1, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = "860", 
+            x = 4, y = -1, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = paste("mean=\n", round(p1dmeans[1], 2), sep = ""), 
+            x = 1, y = p1dmeans[1] +5, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = paste("mean=\n", round(p1dmeans[2], 2), sep = ""), 
+            x = 2, y = p1dmeans[2] +5, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = paste("mean=\n", round(p1dmeans[3], 2), sep = ""), 
+            x = 3, y = p1dmeans[3] +5, colour = "grey30", size = 5) +
+  geom_text(mapping = NULL, label = paste("mean=\n", round(p1dmeans[4], 2), sep = ""), 
+            x = 4, y = p1dmeans[4] +6, colour = "grey30", size = 5) +
+  theme_set(theme_bw(base_size = 15)) +
+  theme(legend.position="none",
+        legend.title=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black")) +
+  ggsave(file = paste(imageDirectory,"CaregiverAmplifiedAge.png",sep="/"),
+         height = 5,  width = 5,  dpi = 320)
+p4
+
+# Figure 2
+# prepare data
+fvrnt <- c("really", "pretty", "so", "very", "real")
+p2d <- data %>%
+  dplyr::select(Speaker, AgeGroup, Variant) %>%
+  dplyr::filter(Speaker == "CHI" & Variant != "0") %>%
+  dplyr::mutate(Variant = ifelse(Variant %in% fvrnt, Variant, "other")) %>%
+  group_by(Variant, AgeGroup) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  group_by(AgeGroup) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::select(-Frequency) %>%
+  dplyr::mutate(Variant = factor(Variant)) %>%
+  dplyr::rename(Age = AgeGroup)
+# plot 2
+p2 <- ggplot(p2d, aes(x = Age, y = Percent, group = Variant, 
+                      color = Variant, linetype = Variant)) +
+  geom_line(aes(y = Percent), size = 1) +
+  coord_cartesian(ylim = c(-2, 50)) +
+  theme_set(theme_bw(base_size = 15)) +
+  theme(legend.position="top",
+        legend.title=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black")) +
+  labs(x = "Age", y = "Percent") +
+  scale_linetype_manual(values=c("dotted", "dashed", "solid", "dotted", "dashed", "solid"), 
+                        name=c("Variants"),
+                        breaks = c("other", "pretty", "real", "really", "so", "very"),
+                        labels = c("other", "pretty", "real", "really", "so", "very")) + 
+  scale_colour_manual(values=c(rep("grey60", 3), rep("grey20", 3)),
+                      name=c("Variants"),
+                      breaks=c("other", "pretty", "real", "really", "so", "very"),  
+                      labels = c("other", "pretty", "real", "really", "so", "very")) +
+  ggsave(file = paste(imageDirectory,"ChildVariantsAge.png",sep="/"),
+         height = 5,  width = 5,  dpi = 320)
+p2
+
+# Figure 3
+# prepare data
+fvrnt <- c("really", "pretty", "so", "very", "real")
+p3d <- data %>%
+  dplyr::select(Speaker, AgeGroup, Variant) %>%
+  dplyr::filter(Speaker == "CHI" & Variant != "0") %>%
+  dplyr::mutate(Variant = ifelse(Variant %in% fvrnt, Variant, "other")) %>%
+  group_by(Variant, AgeGroup) %>%
+  dplyr::summarize(Frequency = n()) %>%
+  group_by(AgeGroup) %>%
+  dplyr::mutate(Percent = round(Frequency/sum(Frequency)*100, 1)) %>%
+  dplyr::mutate(Frequency = paste(Percent, "\n (", Frequency, ")", sep = "")) %>%
+  dplyr::mutate(Variant = factor(Variant)) %>%
+  dplyr::rename(Age = AgeGroup) %>%
+  dplyr::mutate(Variant = factor(Variant)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(Age = factor(Age)) %>%
+  dplyr::mutate(Percent = as.numeric(Percent))
+# plot 3
+p3 <- ggplot(p3d, aes(x = Age, y = Percent, fill = Variant)) +
+  geom_bar(stat="identity", position = position_dodge()) +
+  coord_cartesian(ylim = c(0, 50)) +
+  theme_set(theme_bw(base_size = 15)) +
+  theme(legend.position="top",
+        legend.title=element_blank(),
+        axis.line = element_line(colour = "black")) +
+  labs(x = "Age", y = "Percent") +
+  scale_fill_manual(values=c("grey90", "grey75","grey60","grey45","grey30","grey15"),
+                    name=c("Variants"),
+                    breaks=c("other", "pretty", "real", "really", "so", "very"),  
+                    labels = c("other", "pretty", "real", "really", "so", "very")) +
+  geom_text(aes(label=Frequency), vjust=-.2, color="black", 
+            position = position_dodge(0.9), size=3) +
+  scale_y_continuous(name="Percent", limits=c(0, 50)) +
+  ggsave(file = paste(imageDirectory,"ChildVariantsAge_barplot.png",sep="/"),
+         height = 5,  width = 10,  dpi = 320)
+p3
+
 ###############################################################
 # create data of children only
-chint <- data %>%
+chidata <- data %>%
   filter(Speaker == "CHI")
 # create data of mothers only
-motint <- data %>%
+motdata <- data %>%
   filter(Speaker == "MOT")
 ##############################################################
 # tabulate data
